@@ -2,10 +2,12 @@ extern crate base64;
 use gloo::console::log;
 use image::io::Reader as ImageReader;
 use image::{ColorType, DynamicImage, ImageBuffer, ImageFormat, Luma, LumaA, Rgb, Rgba};
+use itertools::iproduct;
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::io::Cursor;
-use std::iter::Enumerate;
+use std::iter::{Enumerate, FlatMap, FusedIterator, Map};
+use std::ops::Range;
 use std::primitive;
 use std::str::FromStr;
 
@@ -137,38 +139,11 @@ impl Sampler {
         image.buffer.insert(i, primitive);
     }
 
-    pub fn iter_pixels<'a>(&'a self, image: &'a Image) -> PixelIterator<'a> {
-        PixelIterator::new(self, image)
-    }
-}
-
-pub struct PixelIterator<'a> {
-    sampler: &'a Sampler,
-    image: &'a Image,
-    index: usize,
-}
-
-impl<'a> PixelIterator<'a> {
-    pub fn new(sampler: &'a Sampler, image: &'a Image) -> Self {
-        Self {
-            sampler,
-            image,
-            index: 0,
-        }
-    }
-}
-
-impl<'a> Iterator for PixelIterator<'a> {
-    type Item = Vec<PrimitiveRef<'a>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.image.dimensions.0 * self.image.dimensions.1 {
-            None
-        } else {
-            let item = self.sampler.read_pixel(self.image, self.index);
-            self.index += 1;
-            Some(item)
-        }
+    pub fn iter_pixels<'a>(
+        &'a self,
+        image: &'a Image,
+    ) -> impl Iterator<Item = Vec<PrimitiveRef<'a>>> {
+        (0..image.area()).map(|index| self.read_pixel(image, index))
     }
 }
 
@@ -182,56 +157,13 @@ impl Rect {
     pub fn new(min: (usize, usize), max: (usize, usize)) -> Self {
         Self { min, max }
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (usize, usize)> {
+        iproduct!(self.min.0..self.max.0, self.min.1..self.max.1)
+    }
 }
 
 type Dimensions = (usize, usize);
-
-pub struct Crop<T: Iterator> {
-    iter: Enumerate<T>,
-    frame: Rect,
-    dimensions: Dimensions,
-}
-
-impl<T: Iterator> Crop<T> {
-    pub fn new(iter: T, frame: Rect, dimensions: Dimensions) -> Self {
-        assert!(!frame.is_empty());
-        assert!(dimensions > (0, 0));
-        assert!(frame.min >= (0, 0) && frame.dimensions() <= dimensions);
-
-        Self {
-            iter: iter.enumerate(),
-            frame,
-            dimensions,
-        }
-    }
-}
-
-impl<T: Iterator> Iterator for Crop<T> {
-    type Item = <T as Iterator>::Item;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut next = self.iter.next();
-
-        match next.as_ref() {
-            Some((i, _)) => {
-                let index = wrap_index(i, self.dimensions.0);
-                if index.0 > self.frame.max.0 && index.1 > self.frame.max.1 {
-                    return None;
-                }
-            }
-            _ => {}
-        };
-
-        while next.as_ref().map_or_else(
-            || false,
-            |(i, _)| !self.frame.contains(wrap_index(i, self.dimensions.0)),
-        ) {
-            next = self.iter.next();
-        }
-
-        next.map(|(_, item)| item)
-    }
-}
 
 impl Rect {
     pub fn contains(&self, index: (usize, usize)) -> bool {
@@ -256,7 +188,7 @@ impl Rect {
 }
 
 fn wrap_index<T, U>(
-    i: T,
+    index: T,
     wrap_after: U,
 ) -> (
     <T as std::ops::Rem<U>>::Output,
@@ -268,18 +200,18 @@ where
     T: std::ops::Rem<U>,
     T: std::ops::Div<U>,
 {
-    (i % wrap_after, i / wrap_after)
+    (index % wrap_after, index / wrap_after)
 }
 
 fn unwrap_index<T, U>(
-    i: (T, T),
+    index: (T, T),
     wrapped_after: U,
 ) -> <T as std::ops::Add<<T as std::ops::Mul<U>>::Output>>::Output
 where
     T: std::ops::Mul<U>,
     T: std::ops::Add<<T as std::ops::Mul<U>>::Output>,
 {
-    i.0 + i.1 * wrapped_after
+    index.0 + index.1 * wrapped_after
 }
 
 pub enum Buffer {
@@ -407,7 +339,7 @@ impl Component for App {
             state: AppState {
                 file_state: None,
                 edit_state: EditState {
-                    frame: Rect::new((0, 0), (3, 3)),
+                    frame: Rect::new((0, 0), (8, 8)),
                 },
                 error_state: ErrorState { errors: vec![] },
             },
@@ -487,19 +419,67 @@ impl Component for App {
 
                 if wheel_event.shift_key() {
                     if wheel_event.delta_y() > 0. {
-                        self.state.edit_state.frame.min.0 += dimensions.0;
-                        self.state.edit_state.frame.max.0 += dimensions.0;
+                        self.state.edit_state.frame.min.0 = self
+                            .state
+                            .edit_state
+                            .frame
+                            .min
+                            .0
+                            .saturating_add(dimensions.0);
+                        self.state.edit_state.frame.max.0 = self
+                            .state
+                            .edit_state
+                            .frame
+                            .min
+                            .0
+                            .saturating_add(dimensions.0);
                     } else {
-                        self.state.edit_state.frame.min.0 -= dimensions.0;
-                        self.state.edit_state.frame.max.0 -= dimensions.0;
+                        self.state.edit_state.frame.min.0 = self
+                            .state
+                            .edit_state
+                            .frame
+                            .min
+                            .0
+                            .saturating_sub(dimensions.0);
+                        self.state.edit_state.frame.max.0 = self
+                            .state
+                            .edit_state
+                            .frame
+                            .min
+                            .0
+                            .saturating_add(dimensions.0);
                     }
                 } else {
                     if wheel_event.delta_y() > 0. {
-                        self.state.edit_state.frame.min.1 += dimensions.1;
-                        self.state.edit_state.frame.max.1 += dimensions.1;
+                        self.state.edit_state.frame.min.1 = self
+                            .state
+                            .edit_state
+                            .frame
+                            .min
+                            .1
+                            .saturating_add(dimensions.1);
+                        self.state.edit_state.frame.max.1 = self
+                            .state
+                            .edit_state
+                            .frame
+                            .min
+                            .1
+                            .saturating_add(dimensions.1);
                     } else {
-                        self.state.edit_state.frame.min.1 -= dimensions.1;
-                        self.state.edit_state.frame.max.1 -= dimensions.1;
+                        self.state.edit_state.frame.min.1 = self
+                            .state
+                            .edit_state
+                            .frame
+                            .min
+                            .1
+                            .saturating_sub(dimensions.1);
+                        self.state.edit_state.frame.max.1 = self
+                            .state
+                            .edit_state
+                            .frame
+                            .min
+                            .1
+                            .saturating_add(dimensions.1);
                     }
                 }
 
@@ -511,43 +491,7 @@ impl Component for App {
     fn view(&self, ctx: &Context<Self>) -> Html {
         html! {
             <div id="wrapper">
-                <p id="title">{ "Open" }</p>
-                <label for="file-upload">
-                    <div
-                        id="drop-container"
-                        ondrop={ctx.link().callback(|event: DragEvent| {
-                            event.prevent_default();
-                            let files = event.data_transfer().unwrap().files();
-                            Self::upload_files(files)
-                        })}
-                        ondragover={Callback::from(|event: DragEvent| {
-                            event.prevent_default();
-                        })}
-                        ondragenter={Callback::from(|event: DragEvent| {
-                            event.prevent_default();
-                        })}
-                    >
-                        <p>{ "Drop your images here or click to select" }</p>
-                    </div>
-                </label>
-                <input
-                    id="file-upload"
-                    type="file"
-                    accept="image/*"
-                    multiple={false}
-                    onchange={ctx.link().callback(move |e: Event| {
-                        let input: HtmlInputElement = e.target_unchecked_into();
-                        Self::upload_files(input.files())
-                    })}
-                />
                 if let Some(file_state) = self.state.file_state.as_ref() {
-                    <img src={format!("data:{};base64,{}", file_state.mime, encode(file_state.image.write(&file_state.sampler)))} />
-                    <a
-                        id="file-save"
-                        href={format!("data:{};base64,{}", file_state.mime, encode(file_state.image.write(&file_state.sampler)))}
-                        download={file_state.name.clone()}
-                    >{ "Save" }</a>
-
                     <div
                         id="edit-frame"
                         style={ format!("grid-template-columns: 64px repeat({}, 128px); grid-template-rows: 64px repeat({}, 128px);", self.state.edit_state.frame.dimensions().0, self.state.edit_state.frame.dimensions().1) }
@@ -567,6 +511,36 @@ impl Component for App {
                             { self.view_pixels(ctx) }
                         </div>
                     </div>
+                } else {
+                    <p id="title">{ "Open" }</p>
+                    <label for="file-upload">
+                        <div
+                            id="drop-container"
+                            ondrop={ctx.link().callback(|event: DragEvent| {
+                                event.prevent_default();
+                                let files = event.data_transfer().unwrap().files();
+                                Self::upload_files(files)
+                            })}
+                            ondragover={Callback::from(|event: DragEvent| {
+                                event.prevent_default();
+                            })}
+                            ondragenter={Callback::from(|event: DragEvent| {
+                                event.prevent_default();
+                            })}
+                        >
+                            <p>{ "Drop your images here or click to select" }</p>
+                        </div>
+                    </label>
+                    <input
+                        id="file-upload"
+                        type="file"
+                        accept="image/*"
+                        multiple={false}
+                        onchange={ctx.link().callback(move |e: Event| {
+                            let input: HtmlInputElement = e.target_unchecked_into();
+                            Self::upload_files(input.files())
+                        })}
+                    />
                 }
             </div>
         }
@@ -581,45 +555,24 @@ impl App {
                 let edit_callback = ctx
                     .link()
                     .callback(|primitive_edit| Msg::PrimitiveEdit(primitive_edit));
-                let channels = file_state.sampler.channels;
 
-                let frame = self.state.edit_state.frame.clone();
+                self.state
+                    .edit_state
+                    .frame
+                    .iter()
+                    .map(|index| {
+                        let index = unwrap_index(index, file_state.image.dimensions.0);
+                        let primitive_refs =
+                            file_state.sampler.read_pixel(&file_state.image, index);
 
-                (frame.min.0..frame.max.0)
-                    .flat_map(|i| {
                         let edit_callback = edit_callback.clone();
-                        (frame.min.1..frame.max.1).map(move |j| {
-                            let index = unwrap_index((i, j), file_state.image.dimensions.0);
-                            let primitive_refs =
-                                file_state.sampler.read_pixel(&file_state.image, index);
-
-                            let edit_callback = edit_callback.clone();
-                            let channel_values: Vec<_> = primitive_refs
-                                .into_iter()
-                                .map(|primitive_ref| primitive_ref.to_owned())
-                                .collect();
-                            html! { <Pixel {edit_callback} {index} {channels} {channel_values}/> }
-                        })
+                        let channel_values: Vec<_> = primitive_refs
+                            .into_iter()
+                            .map(|primitive_ref| primitive_ref.to_owned())
+                            .collect();
+                        html! { <Pixel {edit_callback} {index} {channel_values}/> }
                     })
                     .collect()
-
-                // Crop::new(
-                //     file_state
-                //         .sampler
-                //         .iter_pixels(&file_state.image)
-                //         .enumerate(),
-                //     self.state.edit_state.frame.clone(),
-                //     file_state.image.dimensions,
-                // )
-                // .map(|(index, primitive_refs)| {
-                //     let edit_callback = edit_callback.clone();
-                //     let channel_values: Vec<_> = primitive_refs
-                //         .into_iter()
-                //         .map(|primitive_ref| primitive_ref.to_owned())
-                //         .collect();
-                //     html! { <Pixel {edit_callback} {index} {channels} {channel_values}/> }
-                // })
-                // .collect()
             },
         )
     }
@@ -641,14 +594,14 @@ impl App {
 
 pub struct PrimitiveEdit {
     pub pixel: usize,
-    pub channel: u8,
+    pub channel: usize,
     pub primitive: Option<Primitive>,
 }
 
 #[derive(Properties, PartialEq)]
 struct ChannelProps {
     pub pixel: usize,
-    pub index: u8,
+    pub index: usize,
     pub edit_callback: Callback<PrimitiveEdit>,
     pub value: Primitive,
 }
@@ -694,7 +647,6 @@ fn Channel(props: &ChannelProps) -> Html {
 #[derive(Properties, PartialEq)]
 struct PixelProps {
     pub index: usize,
-    pub channels: u8,
     pub edit_callback: Callback<PrimitiveEdit>,
     pub channel_values: Vec<Primitive>,
 }
@@ -705,9 +657,9 @@ fn Pixel(props: &PixelProps) -> Html {
         <div class="edit-pixel">
             <div class="edit-channels">
                 {
-                    for (0..props.channels).map(|channel| {
+                    for props.channel_values.iter().enumerate().map(|(index, value)| {
                         let edit_callback = props.edit_callback.clone();
-                        html! { <Channel pixel={props.index} index={channel} {edit_callback} value={props.channel_values.get(channel as usize).expect("Not enough channel values").clone()}/> }
+                        html! { <Channel pixel={props.index} {index} {edit_callback} value={value.clone()}/> }
                     })
                 }
             </div>
@@ -764,6 +716,10 @@ impl From<ColorType> for Sampler {
 }
 
 impl Image {
+    pub fn area(&self) -> usize {
+        self.dimensions.0 * self.dimensions.1
+    }
+
     pub fn write(&self, sampler: &Sampler) -> Vec<u8> {
         let mut bytes = Vec::new();
 

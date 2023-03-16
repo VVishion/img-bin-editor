@@ -12,6 +12,7 @@ js-sys = "0.3"
 gloo = "0.8"
 bytemuck = "1.13"
 base64 = "0.13.0"
+itertools = "0.10"
 
 [dependencies.web-sys]
 version = "0.3"

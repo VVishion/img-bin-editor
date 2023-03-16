@@ -9,6 +9,9 @@ html, body {
 #edit-pixels {
     display: grid;
     grid-gap: 6px;
+    overflow: hidden;
+    max-width: 100vw;
+    max-height: 100vh;
 }
 
 .edit-pixel {
@@ -44,13 +47,11 @@ html, body {
 
 #x-axis {
     display: grid;
-    grid-template-columns: 64px;
     grid-gap: 6px;
 }
 
 #y-axis {
     display: grid;
-    grid-template-rows: 64px;
     grid-gap: 6px;
 }
 
