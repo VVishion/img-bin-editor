@@ -7,12 +7,14 @@ edition = "2021"
 
 [dependencies]
 yew = { version = "0.20", features = ["csr"] }
+yew-agent = "0.2"
 image = { version = "0.24" }
 js-sys = "0.3"
 gloo = "0.8"
 bytemuck = "1.13"
 base64 = "0.13.0"
 itertools = "0.10"
+serde = "1"
 
 [dependencies.web-sys]
 version = "0.3"

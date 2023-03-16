@@ -1,23 +1,23 @@
-extern crate base64;
+use crate::agent::{Worker, WorkerInput, WorkerOutput};
+use bytemuck::cast_slice;
 use gloo::console::log;
+use gloo::file::callbacks::FileReader;
+use gloo::file::File;
 use image::io::Reader as ImageReader;
 use image::{ColorType, DynamicImage, ImageBuffer, ImageFormat, Luma, LumaA, Rgb, Rgba};
 use itertools::iproduct;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::io::Cursor;
-use std::iter::{Enumerate, FlatMap, FusedIterator, Map};
-use std::ops::Range;
-use std::primitive;
+use std::rc::Rc;
 use std::str::FromStr;
-
-use base64::encode;
-use bytemuck::cast_slice;
-use gloo::file::callbacks::FileReader;
-use gloo::file::File;
-use web_sys::{DragEvent, Event, FileList, HtmlInputElement, MouseEvent, WheelEvent};
+use web_sys::{DragEvent, Event, FileList, HtmlInputElement, WheelEvent};
 use yew::html::TargetCast;
 use yew::{function_component, html, Callback, Component, Context, Html, Properties};
+use yew_agent::{Bridge, Bridged};
+
+pub mod agent;
 
 // Da ein ganzes Bild nicht auf den Bildschirm passt, da ein Pixel als Quad mit vier inneren Quads (4 Channel) und seinem Primitiv dargestellt wird, nutze ein Fenster,
 // welches Scrollbar ist
@@ -26,10 +26,13 @@ use yew::{function_component, html, Callback, Component, Context, Html, Properti
 pub enum Msg {
     Load(Vec<File>),
     Loaded(String, String, Vec<u8>),
+    Save,
+    Saved(WorkerOutput),
     PrimitiveEdit(PrimitiveEdit),
     Scroll(WheelEvent),
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub enum PrimitiveType {
     Uint8,
     Uint16,
@@ -113,6 +116,7 @@ impl From<&Primitive> for PrimitiveType {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Sampler {
     pub channels: u8,
     pub primitive_type: PrimitiveType,
@@ -214,6 +218,7 @@ where
     index.0 + index.1 * wrapped_after
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub enum Buffer {
     Uint8(Vec<u8>),
     Uint16(Vec<u16>),
@@ -298,6 +303,7 @@ impl Buffer {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Image {
     pub buffer: Buffer,
     pub dimensions: Dimensions,
@@ -309,6 +315,7 @@ pub struct FileState {
     pub image: Image,
     pub sampler: Sampler,
     pub unsaved_changes: bool,
+    pub encoded: Option<String>,
 }
 
 pub struct EditState {
@@ -328,13 +335,20 @@ pub struct AppState {
 pub struct App {
     state: AppState,
     readers: HashMap<String, FileReader>,
+    worker: Box<dyn Bridge<Worker>>,
 }
 
 impl Component for App {
     type Message = Msg;
     type Properties = ();
 
-    fn create(_ctx: &Context<Self>) -> Self {
+    fn create(ctx: &Context<Self>) -> Self {
+        let callback = {
+            let link = ctx.link().clone();
+            move |output| link.send_message(Self::Message::Saved(output))
+        };
+        let worker = Worker::bridge(Rc::new(callback));
+
         Self {
             state: AppState {
                 file_state: None,
@@ -344,6 +358,7 @@ impl Component for App {
                 error_state: ErrorState { errors: vec![] },
             },
             readers: HashMap::default(),
+            worker,
         }
     }
 
@@ -369,6 +384,7 @@ impl Component for App {
                     image,
                     sampler,
                     unsaved_changes: false,
+                    encoded: None,
                 });
 
                 true
@@ -392,6 +408,20 @@ impl Component for App {
                     };
                     self.readers.insert(file_name, task);
                 }
+                true
+            }
+            Msg::Save => {
+                let file_state = self.state.file_state.as_ref().unwrap();
+                self.worker.send(WorkerInput {
+                    image: file_state.image.clone(),
+                    sampler: file_state.sampler.clone(),
+                });
+
+                false
+            }
+            Msg::Saved(output) => {
+                self.state.file_state.as_mut().unwrap().encoded = Some(output.value);
+
                 true
             }
             Msg::PrimitiveEdit(primitive_edit) => {
@@ -443,6 +473,7 @@ impl Component for App {
                             .min
                             .1
                             .saturating_add(frame_dimensions.1)
+                            // TODO bug in the line below - substraction is wrong
                             .min(image_dimensions.1 - frame_dimensions.1);
                         frame.max.1 = frame.min.1.saturating_add(frame_dimensions.1);
                     } else {
@@ -461,11 +492,21 @@ impl Component for App {
             .state
             .file_state
             .as_ref()
-            .map(|file_state| self.frame(file_state.image.dimensions));
+            .map(|file_state| (self.frame(file_state.image.dimensions), file_state));
 
         html! {
             <div id="wrapper">
-                if let Some(frame) = data {
+                if let Some((frame, file_state)) = data {
+                    <button onclick={ctx.link().callback(|_| Msg::Save)}>{ "Save" }</button>
+
+                    if let Some(encoded) = &file_state.encoded {
+                        <a
+                            id="file-save"
+                            href={format!("data:{};base64,{}", file_state.mime, encoded)}
+                            download={file_state.name.clone()}
+                        >{ "Save" }</a>
+                    }
+
                     <div
                         id="edit-frame"
                         style={ format!("grid-template-columns: 64px repeat({}, 128px); grid-template-rows: 64px repeat({}, 128px);", frame.dimensions().0, frame.dimensions().1) }
@@ -859,8 +900,4 @@ impl Image {
             },
         }
     }
-}
-
-fn main() {
-    yew::Renderer::<App>::new().render();
 }
