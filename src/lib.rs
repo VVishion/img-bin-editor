@@ -3,6 +3,7 @@ use bytemuck::cast_slice;
 use gloo::console::log;
 use gloo::file::callbacks::FileReader;
 use gloo::file::File;
+use gloo::utils::document;
 use image::io::Reader as ImageReader;
 use image::{ColorType, DynamicImage, ImageBuffer, ImageFormat, Luma, LumaA, Rgb, Rgba};
 use itertools::iproduct;
@@ -12,6 +13,8 @@ use std::fmt::{self, Display, Formatter};
 use std::io::Cursor;
 use std::rc::Rc;
 use std::str::FromStr;
+use wasm_bindgen::JsCast;
+use web_sys::HtmlElement;
 use web_sys::{DragEvent, Event, FileList, HtmlInputElement, WheelEvent};
 use yew::html::TargetCast;
 use yew::{function_component, html, Callback, Component, Context, Html, Properties};
@@ -496,14 +499,16 @@ impl Component for App {
         html! {
             <div id="wrapper">
                 if let Some((frame, file_state)) = data {
-                    <button onclick={ctx.link().callback(|_| Msg::Save)}>{ "Save" }</button>
+                    <div id="file-actions">
+                        <button id="file-action-save" onclick={ctx.link().callback(|_| Msg::Save)}>{ "Save" }</button>
+                    </div>
 
                     if let Some(encoded) = &file_state.encoded {
                         <a
                             id="file-save"
                             href={format!("data:{};base64,{}", file_state.mime, encoded)}
                             download={file_state.name.clone()}
-                        >{ "Save" }</a>
+                        />
                     }
 
                     <div
@@ -557,6 +562,15 @@ impl Component for App {
                     />
                 }
             </div>
+        }
+    }
+
+    fn rendered(&mut self, _: &Context<Self>, _: bool) {
+        if let Some(element) = document().get_element_by_id("file-save") {
+            if let Some(file_state) = self.state.file_state.as_mut() {
+                file_state.encoded = None;
+            }
+            element.unchecked_into::<HtmlElement>().click();
         }
     }
 }

@@ -541,6 +541,7 @@ dependencies = [
  "itertools",
  "js-sys",
  "serde",
+ "wasm-bindgen",
  "web-sys",
  "yew",
  "yew-agent",
