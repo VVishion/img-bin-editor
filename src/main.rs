@@ -339,7 +339,7 @@ impl Component for App {
             state: AppState {
                 file_state: None,
                 edit_state: EditState {
-                    frame: Rect::new((0, 0), (8, 8)),
+                    frame: Rect::new((0, 0), (6, 6)),
                 },
                 error_state: ErrorState { errors: vec![] },
             },
@@ -415,71 +415,39 @@ impl Component for App {
                 true
             }
             Msg::Scroll(wheel_event) => {
-                let dimensions = self.state.edit_state.frame.dimensions();
+                let file_state = match self.state.file_state.as_ref() {
+                    Some(file_state) => file_state,
+                    None => return false,
+                };
+
+                let image_dimensions = file_state.image.dimensions;
+                let frame_dimensions = self.state.edit_state.frame.dimensions();
+
+                let frame = &mut self.state.edit_state.frame;
 
                 if wheel_event.shift_key() {
                     if wheel_event.delta_y() > 0. {
-                        self.state.edit_state.frame.min.0 = self
-                            .state
-                            .edit_state
-                            .frame
+                        frame.min.0 = frame
                             .min
                             .0
-                            .saturating_add(dimensions.0);
-                        self.state.edit_state.frame.max.0 = self
-                            .state
-                            .edit_state
-                            .frame
-                            .min
-                            .0
-                            .saturating_add(dimensions.0);
+                            .saturating_add(frame_dimensions.0)
+                            .min(image_dimensions.0 - frame_dimensions.0);
+                        frame.max.0 = frame.min.0.saturating_add(frame_dimensions.0);
                     } else {
-                        self.state.edit_state.frame.min.0 = self
-                            .state
-                            .edit_state
-                            .frame
-                            .min
-                            .0
-                            .saturating_sub(dimensions.0);
-                        self.state.edit_state.frame.max.0 = self
-                            .state
-                            .edit_state
-                            .frame
-                            .min
-                            .0
-                            .saturating_add(dimensions.0);
+                        frame.min.0 = frame.min.0.saturating_sub(frame_dimensions.0);
+                        frame.max.0 = frame.min.0.saturating_add(frame_dimensions.0);
                     }
                 } else {
                     if wheel_event.delta_y() > 0. {
-                        self.state.edit_state.frame.min.1 = self
-                            .state
-                            .edit_state
-                            .frame
+                        frame.min.1 = frame
                             .min
                             .1
-                            .saturating_add(dimensions.1);
-                        self.state.edit_state.frame.max.1 = self
-                            .state
-                            .edit_state
-                            .frame
-                            .min
-                            .1
-                            .saturating_add(dimensions.1);
+                            .saturating_add(frame_dimensions.1)
+                            .min(image_dimensions.1 - frame_dimensions.1);
+                        frame.max.1 = frame.min.1.saturating_add(frame_dimensions.1);
                     } else {
-                        self.state.edit_state.frame.min.1 = self
-                            .state
-                            .edit_state
-                            .frame
-                            .min
-                            .1
-                            .saturating_sub(dimensions.1);
-                        self.state.edit_state.frame.max.1 = self
-                            .state
-                            .edit_state
-                            .frame
-                            .min
-                            .1
-                            .saturating_add(dimensions.1);
+                        frame.min.1 = frame.min.1.saturating_sub(frame_dimensions.1);
+                        frame.max.1 = frame.min.1.saturating_add(frame_dimensions.1);
                     }
                 }
 
@@ -489,26 +457,32 @@ impl Component for App {
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
+        let data = self
+            .state
+            .file_state
+            .as_ref()
+            .map(|file_state| self.frame(file_state.image.dimensions));
+
         html! {
             <div id="wrapper">
-                if let Some(file_state) = self.state.file_state.as_ref() {
+                if let Some(frame) = data {
                     <div
                         id="edit-frame"
-                        style={ format!("grid-template-columns: 64px repeat({}, 128px); grid-template-rows: 64px repeat({}, 128px);", self.state.edit_state.frame.dimensions().0, self.state.edit_state.frame.dimensions().1) }
+                        style={ format!("grid-template-columns: 64px repeat({}, 128px); grid-template-rows: 64px repeat({}, 128px);", frame.dimensions().0, frame.dimensions().1) }
                         onwheel={ctx.link().callback(move |e: WheelEvent| {
                             e.prevent_default();
                             Msg::Scroll(e)
                         })}
                     >
-                        <div id="x-axis" style={ format!("grid-column: span {}; grid-template-columns: 64px repeat({}, 128px);", self.state.edit_state.frame.dimensions().0 + 1, self.state.edit_state.frame.dimensions().0) }>
+                        <div id="x-axis" style={ format!("grid-column: span {}; grid-template-columns: 64px repeat({}, 128px);", frame.dimensions().0 + 1, frame.dimensions().0) }>
                             <div></div>
-                            { for (self.state.edit_state.frame.min.0..self.state.edit_state.frame.max.0).map(|i| { html! { <div><span>{ i }</span></div> } }) }
+                            { for (frame.min.0..frame.max.0).map(|i| { html! { <div><span>{ i + 1 }</span></div> } }) }
                         </div>
-                        <div id="y-axis" style={ format!("grid-row: span {0}; grid-template-rows: repeat({0}, 128px);", self.state.edit_state.frame.dimensions().1) }>
-                            { for (self.state.edit_state.frame.min.1..self.state.edit_state.frame.max.1).map(|i| { html! { <div><span>{ i }</span></div> } }) }
+                        <div id="y-axis" style={ format!("grid-row: span {0}; grid-template-rows: repeat({0}, 128px);", frame.dimensions().1) }>
+                            { for (frame.min.1..frame.max.1).map(|i| { html! { <div><span>{ i + 1 }</span></div> } }) }
                         </div>
-                        <div id="edit-pixels" style={ format!("grid-template-columns: repeat({0}, 128px); grid-template-rows: repeat({1}, 128px); grid-row: span {0}; grid-column: span {1};", self.state.edit_state.frame.dimensions().0, self.state.edit_state.frame.dimensions().1) }>
-                            { self.view_pixels(ctx) }
+                        <div id="edit-pixels" style={ format!("grid-template-columns: repeat({0}, 128px); grid-template-rows: repeat({1}, 128px); grid-row: span {0}; grid-column: span {1};", frame.dimensions().0, frame.dimensions().1) }>
+                            { self.view_pixels(ctx, frame) }
                         </div>
                     </div>
                 } else {
@@ -548,7 +522,19 @@ impl Component for App {
 }
 
 impl App {
-    fn view_pixels(&self, ctx: &Context<Self>) -> Html {
+    fn frame(&self, image_dimensions: Dimensions) -> Rect {
+        let mut frame = self.state.edit_state.frame.clone();
+        let frame_dimensions = frame.dimensions();
+
+        frame.max.0 = frame.max.0.min(image_dimensions.0);
+        frame.max.1 = frame.max.1.min(image_dimensions.1);
+
+        frame.min.0 = frame.max.0.saturating_sub(frame_dimensions.0);
+        frame.min.1 = frame.max.1.saturating_sub(frame_dimensions.1);
+        frame
+    }
+
+    fn view_pixels(&self, ctx: &Context<Self>, frame: Rect) -> Html {
         self.state.file_state.as_ref().map_or_else(
             || html! {},
             |file_state| {
@@ -556,9 +542,7 @@ impl App {
                     .link()
                     .callback(|primitive_edit| Msg::PrimitiveEdit(primitive_edit));
 
-                self.state
-                    .edit_state
-                    .frame
+                frame
                     .iter()
                     .map(|index| {
                         let index = unwrap_index(index, file_state.image.dimensions.0);
