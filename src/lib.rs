@@ -461,7 +461,7 @@ impl Component for App {
                             .min
                             .0
                             .saturating_add(frame_dimensions.0)
-                            .min(image_dimensions.0 - frame_dimensions.0);
+                            .min(image_dimensions.0.saturating_sub(frame_dimensions.0));
                         frame.max.0 = frame.min.0.saturating_add(frame_dimensions.0);
                     } else {
                         frame.min.0 = frame.min.0.saturating_sub(frame_dimensions.0);
@@ -473,8 +473,7 @@ impl Component for App {
                             .min
                             .1
                             .saturating_add(frame_dimensions.1)
-                            // TODO bug in the line below - substraction is wrong
-                            .min(image_dimensions.1 - frame_dimensions.1);
+                            .min(image_dimensions.1.saturating_sub(frame_dimensions.1));
                         frame.max.1 = frame.min.1.saturating_add(frame_dimensions.1);
                     } else {
                         frame.min.1 = frame.min.1.saturating_sub(frame_dimensions.1);
