@@ -1,0 +1,62 @@
+html, body {
+    background-color: #363636;
+}
+
+* {
+    color: #f1f1f1;
+}
+
+#edit-pixels {
+    display: grid;
+    grid-gap: 6px;
+}
+
+.edit-pixel {
+    background-color: #1e1e1e;
+}
+
+.edit-channels {
+    display: grid;
+    grid-template-columns: repeat(2, 64px);
+    grid-template-rows: repeat(2, 64px);
+}
+
+.edit-channel {
+    background-color: #252525;
+    margin: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.edit-channel-input {
+    width: auto;
+    min-width: 0;
+    background-color: #000;
+    border: none;
+    text-align: center;
+}
+
+#edit-frame {
+    display: inline-grid;
+    grid-gap: 6px;
+}
+
+#x-axis {
+    display: grid;
+    grid-template-columns: 64px;
+    grid-gap: 6px;
+}
+
+#y-axis {
+    display: grid;
+    grid-template-rows: 64px;
+    grid-gap: 6px;
+}
+
+#x-axis div, #y-axis div {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #252525;
+}

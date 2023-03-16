@@ -1,0 +1,18 @@
+[package]
+name = "img-bin-editor"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+yew = { version = "0.20", features = ["csr"] }
+image = { version = "0.24" }
+js-sys = "0.3"
+gloo = "0.8"
+bytemuck = "1.13"
+base64 = "0.13.0"
+
+[dependencies.web-sys]
+version = "0.3"
+features = ["File", "DragEvent", "DataTransfer"]
