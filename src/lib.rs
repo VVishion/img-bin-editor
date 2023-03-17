@@ -164,6 +164,13 @@ impl Rect {
         Self { min, max }
     }
 
+    pub fn transposed(&self) -> Self {
+        Self {
+            min: (self.min.1, self.min.0),
+            max: (self.max.1, self.max.0),
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (usize, usize)> {
         iproduct!(self.min.0..self.max.0, self.min.1..self.max.1)
     }
@@ -596,9 +603,10 @@ impl App {
                     .callback(|primitive_edit| Msg::PrimitiveEdit(primitive_edit));
 
                 frame
+                    .transposed()
                     .iter()
-                    .map(|(x, y)| {
-                        let index = unwrap_index((y, x), file_state.image.dimensions.1);
+                    .map(|(y, x)| {
+                        let index = unwrap_index((x, y), file_state.image.dimensions.0);
                         let primitive_refs =
                             file_state.sampler.read_pixel(&file_state.image, index);
 
