@@ -1,6 +1,5 @@
 use crate::agent::{Worker, WorkerInput, WorkerOutput};
 use bytemuck::cast_slice;
-use gloo::console::log;
 use gloo::file::callbacks::FileReader;
 use gloo::file::File;
 use gloo::utils::document;
@@ -526,7 +525,7 @@ impl Component for App {
                         <div id="y-axis" style={ format!("grid-row: span {0}; grid-template-rows: repeat({0}, 128px);", frame.dimensions().1) }>
                             { for (frame.min.1..frame.max.1).map(|i| { html! { <div><span>{ i + 1 }</span></div> } }) }
                         </div>
-                        <div id="edit-pixels" style={ format!("grid-template-columns: repeat({0}, 128px); grid-template-rows: repeat({1}, 128px); grid-row: span {0}; grid-column: span {1};", frame.dimensions().0, frame.dimensions().1) }>
+                        <div id="edit-pixels" style={ format!("grid-template-columns: repeat({0}, 128px); grid-template-rows: repeat({1}, 128px); grid-column: span {0}; grid-row: span {1};", frame.dimensions().0, frame.dimensions().1) }>
                             { self.view_pixels(ctx, frame) }
                         </div>
                     </div>
@@ -598,8 +597,8 @@ impl App {
 
                 frame
                     .iter()
-                    .map(|index| {
-                        let index = unwrap_index(index, file_state.image.dimensions.0);
+                    .map(|(x, y)| {
+                        let index = unwrap_index((y, x), file_state.image.dimensions.1);
                         let primitive_refs =
                             file_state.sampler.read_pixel(&file_state.image, index);
 
